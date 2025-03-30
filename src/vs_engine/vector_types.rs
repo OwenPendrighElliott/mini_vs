@@ -1,5 +1,6 @@
 use half::bf16;
 
+/// Enum to represent different vector types.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum VectorType {
     Float,
@@ -7,6 +8,7 @@ pub enum VectorType {
     BF16,
 }
 
+/// Enum to represent different vector types and their data.
 pub enum Vector {
     Float(Vec<f32>),
     Binary(Vec<u8>),
@@ -14,18 +16,23 @@ pub enum Vector {
 }
 
 impl Vector {
+    /// Creates a new vector of the specified type (f32).
     pub fn from_vec_f32(vec: Vec<f32>) -> Self {
         Vector::Float(vec)
     }
 
+    /// Creates a new vector of the specified type (bf16).
     pub fn from_vec_bf16(vec: Vec<bf16>) -> Self {
         Vector::BF16(vec)
     }
 
+    /// Creates a new vector of the specified type (u8).
+    /// This is typically used for binary vectors.
     pub fn from_vec_u8(vec: Vec<u8>) -> Self {
         Vector::Binary(vec)
     }
 
+    /// Returns the length of the vector.
     pub fn len(&self) -> usize {
         match self {
             Vector::Float(v) => v.len(),
@@ -34,6 +41,7 @@ impl Vector {
         }
     }
 
+    /// Returns the actual dimension of the vector, for f32 and bf16 it is the length but for binary it is the number of bits.
     pub fn get_actual_dim(&self) -> usize {
         match self {
             Vector::Float(v) => v.len(),

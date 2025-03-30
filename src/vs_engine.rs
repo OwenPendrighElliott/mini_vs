@@ -82,6 +82,7 @@ impl KNNIndex {
         distance::calculate_distance(v1, v2, &self.metric)
     }
 
+    /// Check if the vector type matches the expected type for this index.
     fn check_vector_type(&self, vector: &Vector) {
         match (&self.vector_type, vector) {
             (VectorType::Float, Vector::Float(_)) => {}
@@ -106,6 +107,7 @@ impl KNNIndex {
         self.idx_to_id.insert(new_idx, id.to_string());
     }
 
+    /// Remove a vector from the index by its ID.
     pub fn remove(&mut self, id: &str) -> Option<String> {
         let idx = self.id_to_idx.remove(id);
 
@@ -122,6 +124,8 @@ impl KNNIndex {
         Some(id.to_string())
     }
 
+    /// Search for the k nearest neighbors of a given query vector.
+    /// Returns a vector of Hit objects containing the IDs and similarities of the nearest neighbors.
     pub fn search(&self, query: Vector, k: usize) -> Vec<Hit<String>> {
         if query.len() != self.dim {
             panic!("Query dimension mismatch.");

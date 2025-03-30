@@ -1,5 +1,7 @@
 use std::cmp::{Ord, Ordering, PartialOrd};
 
+/// Represents a hit in the KNN search.
+/// Contains the ID of the vector and its similarity score.
 #[derive(Debug, Clone)]
 pub struct Hit<T> {
     pub id: T,
