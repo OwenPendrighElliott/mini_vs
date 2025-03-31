@@ -3,12 +3,13 @@ use half::bf16;
 /// Enum to represent different vector types.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum VectorType {
-    Float,
-    Binary,
-    BF16,
+    Float = 0,
+    Binary = 1,
+    BF16 = 2,
 }
 
 /// Enum to represent different vector types and their data.
+#[derive(Debug, Clone)]
 pub enum Vector {
     Float(Vec<f32>),
     Binary(Vec<u8>),

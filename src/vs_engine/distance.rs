@@ -2,10 +2,11 @@ use crate::vs_engine::vector_types::Vector;
 use half::bf16;
 
 /// Enum to represent different distance metrics.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum DistanceMetric {
-    Euclidean,
-    DotProduct,
-    Hamming,
+    Euclidean = 0,
+    DotProduct = 1,
+    Hamming = 2,
 }
 
 /// Calculate the distance between two vectors based on the specified metric.

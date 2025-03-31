@@ -1,26 +1,27 @@
 use std::cmp::{Ord, Ordering, PartialOrd};
+use std::fmt;
+use std::fmt::Display;
 
 /// Represents a hit in the KNN search.
-/// Contains the ID of the vector and its similarity score.
 #[derive(Debug, Clone)]
-pub struct Hit<T> {
+pub struct Hit<T: Display> {
     pub id: T,
     pub similarity: f32,
 }
 
-impl<T> PartialEq for Hit<T> {
+impl<T: Display> PartialEq for Hit<T> {
     fn eq(&self, other: &Self) -> bool {
         self.similarity == other.similarity
     }
 }
-impl<T> Eq for Hit<T> {}
+impl<T: Display> Eq for Hit<T> {}
 
-impl<T> PartialOrd for Hit<T> {
+impl<T: Display> PartialOrd for Hit<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.similarity.partial_cmp(&other.similarity)
     }
 }
-impl<T> Ord for Hit<T> {
+impl<T: Display> Ord for Hit<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.partial_cmp(other).unwrap_or_else(|| {
             if self.similarity.is_nan() && other.similarity.is_nan() {
@@ -31,6 +32,16 @@ impl<T> Ord for Hit<T> {
                 Ordering::Greater
             }
         })
+    }
+}
+
+impl<T: Display> Display for Hit<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Hit {{ id: {}, similarity: {} }}",
+            self.id, self.similarity
+        )
     }
 }
 
