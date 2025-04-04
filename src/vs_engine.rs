@@ -211,6 +211,7 @@ where
     T: Eq + Hash + Clone + Sync + Display + FromStr,
     <T as FromStr>::Err: std::fmt::Debug,
 {
+    /// Write the index to disk in a binary format.
     pub fn write_to_disk<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         writer.write_all(&(self.dim as u64).to_le_bytes())?;
         writer.write_all(&(self.data.len() as u64).to_le_bytes())?;
@@ -252,6 +253,7 @@ where
         Ok(())
     }
 
+    /// Read the index from disk in a binary format.
     pub fn read_from_disk<R: Read>(reader: &mut R) -> io::Result<Self> {
         fn read_exact<const N: usize, R: Read>(reader: &mut R) -> io::Result<[u8; N]> {
             let mut buf = [0u8; N];
