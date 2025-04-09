@@ -1,82 +1,102 @@
+use crate::vs_engine::distance::{
+    dot_product_bf16, dot_product_f32, euclidean_distance_bf16, euclidean_distance_f32,
+    hamming_distance, DistanceMetric,
+};
 use half::bf16;
 
-/// Enum to represent different vector types.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum VectorType {
-    Float = 0,
-    Binary = 1,
-    BF16 = 2,
+pub struct F32Vector;
+pub struct BF16Vector;
+pub struct BinaryVector;
+
+mod sealed {
+    pub trait Sealed {}
+    impl Sealed for super::F32Vector {}
+    impl Sealed for super::BF16Vector {}
+    impl Sealed for super::BinaryVector {}
 }
 
-/// Enum to represent different vector types and their data.
-#[derive(Debug, Clone)]
-pub enum Vector {
-    Float(Vec<f32>),
-    Binary(Vec<u8>),
-    BF16(Vec<bf16>),
+pub trait VectorKind: sealed::Sealed {
+    type Elem: Copy + Send + Sync;
+    fn distance(a: &[Self::Elem], b: &[Self::Elem], metric: DistanceMetric) -> f32;
+    fn to_le_bytes(a: &[Self::Elem]) -> Vec<u8>;
+    fn from_le_bytes(bytes: &[u8], dim: usize) -> Vec<Self::Elem>;
+    fn size_of_vector(dim: usize) -> usize {
+        std::mem::size_of::<Self::Elem>() * dim
+    }
 }
 
-impl Vector {
-    /// Creates a new vector of the specified type (f32).
-    pub fn from_vec_f32(vec: Vec<f32>) -> Self {
-        Vector::Float(vec)
-    }
+impl VectorKind for F32Vector {
+    type Elem = f32;
 
-    /// Creates a new vector of the specified type (bf16).
-    pub fn from_vec_bf16(vec: Vec<bf16>) -> Self {
-        Vector::BF16(vec)
-    }
-
-    /// Creates a new vector of the specified type (u8).
-    /// This is typically used for binary vectors.
-    pub fn from_vec_u8(vec: Vec<u8>) -> Self {
-        Vector::Binary(vec)
-    }
-
-    /// Returns the length of the vector.
-    pub fn len(&self) -> usize {
-        match self {
-            Vector::Float(v) => v.len(),
-            Vector::Binary(v) => v.len(),
-            Vector::BF16(v) => v.len(),
+    fn distance(a: &[f32], b: &[f32], metric: DistanceMetric) -> f32 {
+        match metric {
+            DistanceMetric::Euclidean => euclidean_distance_f32(a, b),
+            DistanceMetric::DotProduct => dot_product_f32(a, b),
+            _ => panic!("Invalid metric for f32 vector"),
         }
     }
 
-    /// Returns the actual dimension of the vector, for f32 and bf16 it is the length but for binary it is the number of bits.
-    pub fn get_actual_dim(&self) -> usize {
-        match self {
-            Vector::Float(v) => v.len(),
-            Vector::Binary(v) => v.len() * 8,
-            Vector::BF16(v) => v.len(),
+    fn to_le_bytes(a: &[f32]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for &value in a {
+            bytes.extend_from_slice(&value.to_le_bytes());
         }
+        bytes
+    }
+
+    fn from_le_bytes(bytes: &[u8], dim: usize) -> Vec<f32> {
+        let mut vec = Vec::with_capacity(dim);
+        for chunk in bytes.chunks_exact(std::mem::size_of::<f32>()) {
+            let value = f32::from_le_bytes(chunk.try_into().unwrap());
+            vec.push(value);
+        }
+        vec
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl VectorKind for BF16Vector {
+    type Elem = bf16;
 
-    #[test]
-    fn test_vector_len() {
-        let vec_f32 = Vector::from_vec_f32(vec![1.0, 2.0, 3.0]);
-        assert_eq!(vec_f32.len(), 3);
-
-        let vec_bf16 = Vector::from_vec_bf16(vec![bf16::from_f32(1.0), bf16::from_f32(2.0)]);
-        assert_eq!(vec_bf16.len(), 2);
-
-        let vec_u8 = Vector::from_vec_u8(vec![1, 2, 3]);
-        assert_eq!(vec_u8.len(), 3);
+    fn distance(a: &[bf16], b: &[bf16], metric: DistanceMetric) -> f32 {
+        match metric {
+            DistanceMetric::Euclidean => euclidean_distance_bf16(a, b),
+            DistanceMetric::DotProduct => dot_product_bf16(a, b),
+            _ => panic!("Invalid metric for bf16 vector"),
+        }
     }
 
-    #[test]
-    fn test_vector_get_actual_dim() {
-        let vec_f32 = Vector::from_vec_f32(vec![1.0, 2.0, 3.0]);
-        assert_eq!(vec_f32.get_actual_dim(), 3);
+    fn to_le_bytes(a: &[bf16]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for &value in a {
+            bytes.extend_from_slice(&value.to_ne_bytes());
+        }
+        bytes
+    }
 
-        let vec_bf16 = Vector::from_vec_bf16(vec![bf16::from_f32(1.0), bf16::from_f32(2.0)]);
-        assert_eq!(vec_bf16.get_actual_dim(), 2);
+    fn from_le_bytes(bytes: &[u8], dim: usize) -> Vec<bf16> {
+        let mut vec = Vec::with_capacity(dim);
+        for chunk in bytes.chunks_exact(std::mem::size_of::<bf16>()) {
+            let value = bf16::from_ne_bytes(chunk.try_into().unwrap());
+            vec.push(value);
+        }
+        vec
+    }
+}
 
-        let vec_u8 = Vector::from_vec_u8(vec![1, 2, 3]);
-        assert_eq!(vec_u8.get_actual_dim(), 24);
+impl VectorKind for BinaryVector {
+    type Elem = u8;
+
+    fn distance(a: &[u8], b: &[u8], metric: DistanceMetric) -> f32 {
+        match metric {
+            DistanceMetric::Hamming => hamming_distance(a, b),
+            _ => panic!("Invalid metric for binary vector"),
+        }
+    }
+
+    fn to_le_bytes(a: &[u8]) -> Vec<u8> {
+        a.to_vec()
+    }
+    fn from_le_bytes(bytes: &[u8], _: usize) -> Vec<u8> {
+        bytes.to_vec()
     }
 }

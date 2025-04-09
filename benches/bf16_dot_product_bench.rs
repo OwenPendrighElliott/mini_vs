@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use half::bf16;
-use mini_vs::{DistanceMetric, KNNIndex, Vector, VectorType};
+use mini_vs::{BF16Vector, DistanceMetric, KNNIndex};
 use rand::prelude::*;
 
 const DIM: usize = 384;
@@ -23,46 +23,34 @@ fn bench_knn_index_bf16_dot_product(c: &mut Criterion) {
 
     c.bench_function("KNNIndex_bf16_dotproduct_add", |b| {
         b.iter(|| {
-            let mut index = KNNIndex::new(
-                DIM,
-                "test_index".to_string(),
-                DistanceMetric::DotProduct,
-                VectorType::BF16,
-            );
+            let mut index: KNNIndex<String, BF16Vector> =
+                KNNIndex::new(DIM, "test_index".to_string(), DistanceMetric::DotProduct);
             for (i, v) in data.iter().enumerate() {
-                index.add(&i.to_string(), Vector::from_vec_bf16(v.clone()));
+                index.add(&i.to_string(), v.clone());
             }
         })
     });
 
-    let mut index = KNNIndex::new(
-        DIM,
-        "test_index".to_string(),
-        DistanceMetric::DotProduct,
-        VectorType::BF16,
-    );
+    let mut index: KNNIndex<String, BF16Vector> =
+        KNNIndex::new(DIM, "test_index".to_string(), DistanceMetric::DotProduct);
     for (i, v) in data.iter().enumerate() {
-        index.add(&i.to_string(), Vector::from_vec_bf16(v.clone()));
+        index.add(&i.to_string(), v.clone());
     }
 
     c.bench_function("KNNIndex_bf16_dotproduct_search", |b| {
         b.iter(|| {
             for _ in 0..100 {
-                index.search(Vector::from_vec_bf16(generate_random_vector(DIM)), 100);
+                index.search(generate_random_vector(DIM), 100);
             }
         })
     });
 
     c.bench_function("KNNIndex_bf16_remove_data", |b| {
         b.iter(|| {
-            let mut index = KNNIndex::new(
-                DIM,
-                "test_index".to_string(),
-                DistanceMetric::DotProduct,
-                VectorType::BF16,
-            );
+            let mut index: KNNIndex<String, BF16Vector> =
+                KNNIndex::new(DIM, "test_index".to_string(), DistanceMetric::DotProduct);
             for (i, v) in data.iter().enumerate() {
-                index.add(&i.to_string(), Vector::from_vec_bf16(v.clone()));
+                index.add(&i.to_string(), v.clone());
             }
             for i in 0..1000 {
                 let removed = index.remove(&i.to_string());

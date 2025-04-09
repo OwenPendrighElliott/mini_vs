@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use mini_vs::{DistanceMetric, KNNIndex, Vector, VectorType};
+use mini_vs::{BinaryVector, DistanceMetric, KNNIndex};
 use rand::prelude::*;
 
 const DIM: usize = 48;
@@ -20,46 +20,34 @@ fn bench_knn_index_u8_hamming(c: &mut Criterion) {
 
     c.bench_function("KNNIndex_u8_Hamming_add", |b| {
         b.iter(|| {
-            let mut index = KNNIndex::new(
-                DIM,
-                "test_index".to_string(),
-                DistanceMetric::Hamming,
-                VectorType::Binary,
-            );
+            let mut index: KNNIndex<String, BinaryVector> =
+                KNNIndex::new(DIM, "test_index".to_string(), DistanceMetric::Hamming);
             for (i, v) in data.iter().enumerate() {
-                index.add(&i.to_string(), Vector::from_vec_u8(v.clone()));
+                index.add(&i.to_string(), v.clone());
             }
         })
     });
 
-    let mut index = KNNIndex::new(
-        DIM,
-        "test_index".to_string(),
-        DistanceMetric::Hamming,
-        VectorType::Binary,
-    );
+    let mut index: KNNIndex<String, BinaryVector> =
+        KNNIndex::new(DIM, "test_index".to_string(), DistanceMetric::Hamming);
     for (i, v) in data.iter().enumerate() {
-        index.add(&i.to_string(), Vector::from_vec_u8(v.clone()));
+        index.add(&i.to_string(), v.clone());
     }
 
     c.bench_function("KNNIndex_u8_Hamming_search", |b| {
         b.iter(|| {
             for _ in 0..100 {
-                index.search(Vector::from_vec_u8(generate_random_vector(DIM)), 100);
+                index.search(generate_random_vector(DIM), 100);
             }
         })
     });
 
     c.bench_function("KNNIndex_u8_remove_data", |b| {
         b.iter(|| {
-            let mut index = KNNIndex::new(
-                DIM,
-                "test_index".to_string(),
-                DistanceMetric::Hamming,
-                VectorType::Binary,
-            );
+            let mut index: KNNIndex<String, BinaryVector> =
+                KNNIndex::new(DIM, "test_index".to_string(), DistanceMetric::Hamming);
             for (i, v) in data.iter().enumerate() {
-                index.add(&i.to_string(), Vector::from_vec_u8(v.clone()));
+                index.add(&i.to_string(), v.clone());
             }
             for i in 0..1000 {
                 let removed = index.remove(&i.to_string());
