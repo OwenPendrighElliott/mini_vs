@@ -1,11 +1,14 @@
-use half::bf16;
+use bincode::{
+    config::standard,
+    serde::{decode_from_slice, encode_to_vec},
+};
 use rayon::prelude::*;
+use serde::{de::DeserializeOwned, Serialize};
 use std::collections::{BinaryHeap, HashMap};
 use std::error::Error;
 use std::fmt::Display;
 use std::hash::Hash;
 use std::io::{self, Read, Write};
-use std::str::FromStr;
 pub mod distance;
 pub mod hit;
 pub mod vector_types;
@@ -192,98 +195,114 @@ where
     }
 }
 
-// ser der operations for the index
-// impl<K, V> KNNIndex<K, V>
-// where
-//     K: Eq + Hash + Clone + Sync + Display,
-//     V: VectorKind,
-//     V::Elem: Copy + Send + Sync,
-// {
-//     /// Write the index to disk in a binary format.
-//     pub fn write_to_disk<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-//         writer.write_all(&(self.dim as u64).to_le_bytes())?;
-//         writer.write_all(&(self.data.len() as u64).to_le_bytes())?;
-//         writer.write_all(&(self.metric as u8).to_le_bytes())?;
+// Serialization and Deserialization of the index
+impl<K, V> KNNIndex<K, V>
+where
+    K: Eq + Hash + Clone + Sync + Display + Serialize + DeserializeOwned,
+    V: VectorKind,
+    V::Elem: Copy + Send + Sync,
+{
+    /// Writes the index to disk in a binary format.
+    /// The format is as follows:
+    /// - 8 bytes for dimension
+    /// - 8 bytes for number of vectors
+    /// - 1 byte for metric (0: Euclidean, 1: DotProduct, 2: Hamming)
+    /// - 8 bytes for index name length
+    /// - index name as UTF-8 string
+    /// - 8 bytes for number of vectors
+    /// - vector data (each vector is stored as a sequence of bytes)
+    /// - 8 bytes for number of id-to-index mappings
+    /// - id-to-index mappings (each mapping is stored as a sequence of bytes)
+    /// - 8 bytes for id length
+    /// - id as UTF-8 string
+    /// - 8 bytes for index
+    /// - index as u64
+    /// The index can be read back using the `read_from_disk` method.
+    /// The index must be in the same format as written by `write_to_disk`.
+    pub fn write_to_disk<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        writer.write_all(&(self.dim as u64).to_le_bytes())?;
+        writer.write_all(&(self.data.len() as u64).to_le_bytes())?;
+        writer.write_all(&(self.metric as u8).to_le_bytes())?;
 
-//         // Serialize index_name
-//         writer.write_all(&(self.index_name.len() as u64).to_le_bytes())?;
-//         writer.write_all(self.index_name.as_bytes())?;
+        writer.write_all(&(self.index_name.len() as u64).to_le_bytes())?;
+        writer.write_all(self.index_name.as_bytes())?;
 
-//         // Serialize data
-//         for vector in &self.data {
-//             writer.write_all(&V::to_le_bytes(vector))?;
-//         }
+        for v in &self.data {
+            writer.write_all(&V::to_le_bytes(v))?;
+        }
 
-//         // Serialize id_to_idx
-//         writer.write_all(&(self.id_to_idx.len() as u64).to_le_bytes())?;
-//         for (id, idx) in &self.id_to_idx {
-//             let id_str = id.to_string();
-//             writer.write_all(&(id_str.len() as u64).to_le_bytes())?;
-//             writer.write_all(id_str.as_bytes())?;
-//             writer.write_all(&(*idx as u64).to_le_bytes())?;
-//         }
+        writer.write_all(&(self.id_to_idx.len() as u64).to_le_bytes())?;
+        for (id, idx) in &self.id_to_idx {
+            let id_bytes = encode_to_vec(id, standard())
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            writer.write_all(&(id_bytes.len() as u64).to_le_bytes())?;
+            writer.write_all(&id_bytes)?;
+            writer.write_all(&(*idx as u64).to_le_bytes())?;
+        }
+        Ok(())
+    }
 
-//         Ok(())
-//     }
+    /// Reads the index from disk.
+    /// The index must be in the same format as written by `write_to_disk`.
+    /// Returns a new KNNIndex instance.
+    pub fn read_from_disk<R: Read>(reader: &mut R) -> io::Result<Self> {
+        fn read_exact<const N: usize, R: Read>(r: &mut R) -> io::Result<[u8; N]> {
+            let mut buf = [0u8; N];
+            r.read_exact(&mut buf)?;
+            Ok(buf)
+        }
 
-//     /// Read the index from disk in a binary format.
-//     pub fn read_from_disk<R: Read>(reader: &mut R) -> io::Result<Self> {
-//         fn read_exact<const N: usize, R: Read>(reader: &mut R) -> io::Result<[u8; N]> {
-//             let mut buf = [0u8; N];
-//             reader.read_exact(&mut buf)?;
-//             Ok(buf)
-//         }
+        let dim = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
+        let data_len = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
+        let metric = match u8::from_le_bytes(read_exact::<1, _>(reader)?) {
+            0 => distance::DistanceMetric::Euclidean,
+            1 => distance::DistanceMetric::DotProduct,
+            2 => distance::DistanceMetric::Hamming,
+            x => panic!("bad metric {}", x),
+        };
 
-//         let dim = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
-//         let data_len = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
+        // index name
+        let name_len = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
+        let mut name_buf = vec![0u8; name_len];
+        reader.read_exact(&mut name_buf)?;
+        let index_name = String::from_utf8(name_buf).unwrap();
 
-//         let metric = match u8::from_le_bytes(read_exact::<1, _>(reader)?) {
-//             0 => distance::DistanceMetric::Euclidean,
-//             1 => distance::DistanceMetric::DotProduct,
-//             2 => distance::DistanceMetric::Hamming,
-//             x => panic!("Invalid DistanceMetric: {}", x),
-//         };
+        // vectors
+        let mut data = Vec::with_capacity(data_len);
+        for _ in 0..data_len {
+            let mut buf = vec![0u8; V::size_of_vector(dim)];
+            reader.read_exact(&mut buf)?;
+            data.push(V::from_le_bytes(&buf, dim));
+        }
 
-//         // Deserialize index_name
-//         let name_len = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
-//         let mut name_buf = vec![0u8; name_len];
-//         reader.read_exact(&mut name_buf)?;
-//         let index_name = String::from_utf8(name_buf).unwrap();
+        // maps
+        let map_len = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
+        let mut id_to_idx = HashMap::with_capacity(map_len);
+        let mut idx_to_id = HashMap::with_capacity(map_len);
 
-//         // Deserialize data
-//         let mut data = Vec::with_capacity(data_len);
-//         for _ in 0..data_len {
-//             let mut vec_buf = vec![0u8; V::size_of_vector(dim)];
-//             reader.read_exact(&mut vec_buf)?;
-//             let vector = V::from_le_bytes(&vec_buf, dim);
-//             data.push(vector);
-//         }
+        for _ in 0..map_len {
+            let id_len = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
+            let mut id_buf = vec![0u8; id_len];
+            reader.read_exact(&mut id_buf)?;
 
-//         // Deserialize id_to_idx
-//         let map_len = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
-//         let mut id_to_idx = HashMap::with_capacity(map_len);
-//         let mut idx_to_id = HashMap::with_capacity(map_len);
-//         for _ in 0..map_len {
-//             let id_len = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
-//             let mut id_buf = vec![0u8; id_len];
-//             reader.read_exact(&mut id_buf)?;
-//             let id_str = String::from_utf8(id_buf).unwrap();
-//             let id = K::from_str(&id_str).unwrap();
-//             let idx = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
-//             id_to_idx.insert(id.clone(), idx);
-//             idx_to_id.insert(idx, id);
-//         }
+            let (id, _): (K, _) = decode_from_slice(&id_buf, standard())
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
 
-//         Ok(KNNIndex {
-//             data,
-//             dim,
-//             id_to_idx,
-//             idx_to_id,
-//             index_name,
-//             metric,
-//         })
-//     }
-// }
+            let idx = u64::from_le_bytes(read_exact::<8, _>(reader)?) as usize;
+            id_to_idx.insert(id.clone(), idx);
+            idx_to_id.insert(idx, id);
+        }
+
+        Ok(Self {
+            data,
+            dim,
+            id_to_idx,
+            idx_to_id,
+            index_name,
+            metric,
+        })
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -419,34 +438,32 @@ mod tests {
         assert_eq!(v[2], 3.0);
     }
 
-    // #[test]
-    // fn test_write_read_index() {
-    //     let dir = tempdir().unwrap();
-    //     let path = dir.path().join("test_index.bin");
+    #[test]
+    fn test_write_read_index() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("test_index.bin");
 
-    //     let mut index = KNNIndex::new(
-    //         3,
-    //         "test_index".to_string(),
-    //         distance::DistanceMetric::Euclidean,
-    //         VectorType::Float,
-    //     );
-    //     index.add(&"1".to_string(), Vector::from_vec_f32(vec![1.0, 2.0, 3.0]));
-    //     index.add(&"2".to_string(), Vector::from_vec_f32(vec![4.0, 5.0, 6.0]));
-    //     index.add(&"3".to_string(), Vector::from_vec_f32(vec![7.0, 8.0, 9.0]));
+        let mut index: KNNIndex<String, F32Vector> = KNNIndex::new(
+            3,
+            "test_index".to_string(),
+            distance::DistanceMetric::Euclidean,
+        );
+        index.add(&"1".to_string(), vec![1.0_f32, 2.0, 3.0]);
+        index.add(&"2".to_string(), vec![4.0_f32, 5.0, 6.0]);
+        index.add(&"3".to_string(), vec![7.0_f32, 8.0, 9.0]);
 
-    //     {
-    //         let mut file = File::create(&path).unwrap();
-    //         index.write_to_disk(&mut file).unwrap();
-    //     }
+        {
+            let mut file = File::create(&path).unwrap();
+            index.write_to_disk(&mut file).unwrap();
+        }
 
-    //     let loaded_index =
-    //         KNNIndex::<String>::read_from_disk(&mut File::open(&path).unwrap()).unwrap();
+        let loaded_index =
+            KNNIndex::<String, F32Vector>::read_from_disk(&mut File::open(&path).unwrap()).unwrap();
 
-    //     assert_eq!(index.get_name(), loaded_index.get_name());
-    //     assert_eq!(index.dim, loaded_index.dim);
-    //     assert_eq!(index.metric, loaded_index.metric);
-    //     assert_eq!(index.vector_type, loaded_index.vector_type);
+        assert_eq!(index.get_name(), loaded_index.get_name());
+        assert_eq!(index.dim, loaded_index.dim);
+        assert_eq!(index.metric, loaded_index.metric);
 
-    //     assert_eq!(index.data.len(), loaded_index.data.len());
-    // }
+        assert_eq!(index.data.len(), loaded_index.data.len());
+    }
 }

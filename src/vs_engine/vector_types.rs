@@ -1,6 +1,6 @@
 use crate::vs_engine::distance::{
     dot_product_bf16, dot_product_f32, euclidean_distance_bf16, euclidean_distance_f32,
-    hamming_distance, DistanceMetric,
+    hamming_distance, haversine_distance_f32, DistanceMetric,
 };
 use half::bf16;
 
@@ -32,6 +32,7 @@ impl VectorKind for F32Vector {
         match metric {
             DistanceMetric::Euclidean => euclidean_distance_f32(a, b),
             DistanceMetric::DotProduct => dot_product_f32(a, b),
+            DistanceMetric::Haversine => haversine_distance_f32(a, b),
             _ => panic!("Invalid metric for f32 vector"),
         }
     }
